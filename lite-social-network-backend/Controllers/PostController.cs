@@ -136,4 +136,67 @@ public class PostController: Controller
         return BadRequest();
     }
     
+    [Authorize]
+    [HttpPost]
+    [Route("update/{id}")]
+    public async Task<IActionResult> UpdatePost([FromBody] AddPostModel model, [FromRoute] int id)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == User.Identity.Name);
+        var post = await _dbContext.Posts.FirstOrDefaultAsync(p => p.Id == id && user != null && p.Author.Id == user.Id);
+        if (user != null && post != null)
+        {
+            var imageUrl = "";
+            if (model.Image != "")
+            {
+                var url = $"https://api.imgbb.com/1/upload?key=d5d402271f3c028176e1b975a518890f";
+                var content = new MultipartFormDataContent();
+                content.Add(new StringContent(model.Image.Split(',')[1]), "image");
+                var request = new HttpRequestMessage(HttpMethod.Post, url) {Content = content};
+                var uploadResponse = await _httpClient.SendAsync(request);
+
+                if (uploadResponse.IsSuccessStatusCode)
+                {
+                    var respData = await uploadResponse.Content.ReadAsStringAsync();
+                    var json = System.Text.Json.JsonDocument.Parse(respData);
+                    imageUrl = json.RootElement.GetProperty("data").GetProperty("url").ToString();
+                }
+                else
+                {
+                    return BadRequest("Image upload service returned an error!");
+                }
+            }
+
+            post.Text = model.Text;
+            post.ImageUrl = post.ImageUrl;
+            post.CreationDate = post.CreationDate.Subtract(TimeSpan.FromHours(3));
+            _dbContext.Posts.Update(post);
+            await _dbContext.SaveChangesAsync();
+            return Ok();
+        }
+
+        return BadRequest();
+    }
+
+    [Authorize]
+    [HttpGet]
+    [Route("remove/{id}")]
+    public async Task<IActionResult> RemovePost([FromRoute] int id)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == User.Identity.Name);
+        var post = await _dbContext.Posts.FirstOrDefaultAsync(p => p.Id == id && user != null && p.Author.Id == user.Id);
+        if (user != null && post != null)
+        {
+            var postLikes = await _dbContext.Likes.Where(l => l.Post.Id == post.Id).ToListAsync();
+            _dbContext.Likes.RemoveRange(postLikes);
+            _dbContext.Posts.Remove(post);
+            await _dbContext.SaveChangesAsync();
+            return Ok();
+        }
+
+        return BadRequest();
+    }
+
+
+
+
 }
